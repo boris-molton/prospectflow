@@ -59,8 +59,8 @@ export async function saveCvText(
 }
 
 export async function extractTextFromPdf(buffer: Buffer): Promise<string> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const pdfParse = require("pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
+  // Import lib directly to avoid the test file loading in pdf-parse's index.js
+  const pdfParse = (await import("pdf-parse/lib/pdf-parse.js")).default as (buf: Buffer) => Promise<{ text: string }>;
   const result = await pdfParse(buffer);
   return result.text;
 }
