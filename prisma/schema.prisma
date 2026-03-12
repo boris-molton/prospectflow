@@ -1,0 +1,262 @@
+// ProspectFlow - Schéma de base de données
+// Gestion des candidatures spontanées
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ AUTH (NextAuth) ============
+
+model Account {
+  id                       String  @id @default(cuid())
+  userId                   String
+  type                     String
+  provider                 String
+  providerAccountId        String
+  refresh_token            String?
+  access_token             String?
+  expires_at               Int?
+  scope                    String?
+  id_token                 String?
+  token_type               String?
+  session_state            String?
+  refresh_token_expires_in Int?
+  user                     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String       @id @default(cuid())
+  name          String?
+  email         String?      @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  profile       UserProfile?
+}
+
+// ============ USER PROFILE ============
+
+model UserProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @updatedAt
+
+  fullName          String?
+  headline          String?
+  presentation      String?
+
+  cvFrText          String?
+  cvEnText          String?
+  cvFrFilename      String?
+  cvEnFilename      String?
+
+  desiredRoles      String?
+  desiredLocations  String?
+  desiredIndustries String?
+  workPreferences   String?
+  keySkills         String?
+  uniqueValue       String?
+  additionalContext String?
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============ CORE - PROSPECTS ============
+
+model Prospect {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Contact
+  contactName        String
+  contactEmail       String
+  contactRole        String?
+  contactLinkedInUrl String?
+
+  // Company
+  companyName        String
+  companyWebsite     String?
+  companyLinkedInUrl String?
+  industry           String?
+  country            String?
+  city               String?
+
+  // Enrichment & personalization
+  linkedInSummary   String?
+  companyInfo       String?
+  commonPoints      String?
+  opportunityType   String?
+  preferredLanguage String?  @default("fr")
+  notes             String?
+  source            String?
+
+  // Status & workflow
+  status ProspectStatus @default(NOUVEAU)
+
+  // Relations
+  tags       ProspectTag[]
+  emailsSent EmailSent[]
+  replies    EmailReply[]
+  activities Activity[]
+
+  @@index([status])
+  @@index([contactEmail])
+  @@index([companyName])
+  @@index([createdAt])
+}
+
+enum ProspectStatus {
+  NOUVEAU
+  A_ENRICHIR
+  PRET_A_CONTACTER
+  EMAIL_GENERE
+  ENVOYE
+  RELANCE_A_FAIRE
+  EN_ATTENTE_REPONSE
+  REPONSE_RECUE
+  REPONSE_POSITIVE
+  REPONSE_NEGATIVE
+  ENTRETIEN_OBTENU
+  OPPORTUNITE_FERMEE
+  ARCHIVE
+}
+
+model Tag {
+  id        String        @id @default(cuid())
+  name      String        @unique
+  color     String?
+  prospects ProspectTag[]
+}
+
+model ProspectTag {
+  prospectId String
+  tagId      String
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([prospectId, tagId])
+}
+
+// ============ EMAIL & GMAIL ============
+
+model EmailSent {
+  id         String    @id @default(cuid())
+  prospectId String
+  prospect   Prospect  @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  subject        String
+  body           String
+  type           EmailType @default(INITIAL)
+
+  gmailMessageId String?
+  gmailThreadId  String?
+
+  sentAt         DateTime  @default(now())
+  deliveryStatus String?
+
+  tone            String?
+  language        String?
+  aiScore         Float?
+  aiSuggestions   String?
+
+  replies EmailReply[]
+
+  @@index([prospectId])
+  @@index([gmailThreadId])
+  @@index([sentAt])
+}
+
+enum EmailType {
+  INITIAL
+  FOLLOWUP_3
+  FOLLOWUP_7
+  FOLLOWUP_14
+}
+
+// ============ EMAIL REPLIES ============
+
+model EmailReply {
+  id         String   @id @default(cuid())
+  prospectId String
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  emailSentId    String?
+  emailSent      EmailSent? @relation(fields: [emailSentId], references: [id])
+
+  gmailMessageId String?
+  gmailThreadId  String?
+
+  fromEmail    String
+  fromName     String?
+  subject      String?
+  body         String
+  snippet      String?
+  receivedAt   DateTime
+
+  sentiment    ReplySentiment @default(NEUTRAL)
+  aiAnalysis   String?
+  aiSuggestion String?
+
+  @@index([prospectId])
+  @@index([gmailThreadId])
+  @@index([receivedAt])
+}
+
+enum ReplySentiment {
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+}
+
+// ============ ACTIVITY & HISTORY ============
+
+model Activity {
+  id          String       @id @default(cuid())
+  prospectId  String
+  prospect    Prospect     @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  type        ActivityType
+  description String?
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([prospectId])
+  @@index([createdAt])
+}
+
+enum ActivityType {
+  PROSPECT_CREATED
+  PROSPECT_UPDATED
+  STATUS_CHANGED
+  EMAIL_GENERATED
+  EMAIL_SENT
+  FOLLOWUP_SENT
+  REPLY_RECEIVED
+  TAG_ADDED
+  NOTE_ADDED
+}
